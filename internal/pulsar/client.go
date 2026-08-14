@@ -43,7 +43,7 @@ func (c *Client) CreateProducer(topic string) (pulsar.Producer, error) {
 		MaxPendingMessages:      c.cfg.MaxMessageQueueSize,
 		BatchingMaxPublishDelay: time.Duration(c.cfg.MaxBatchingDelay) * time.Millisecond,
 		BatchingMaxMessages:     uint(c.cfg.MaxBatchingMessageCount),
-		DisableBatching:         false,
+		DisableBatching:         true,
 	}
 
 	producer, err := c.pulsarClient.CreateProducer(producerOptions)

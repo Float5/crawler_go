@@ -33,7 +33,7 @@ crawl_per_second_map:
     LinkFinder_T: 25
     ProfileFinder_N: 4
     ProfileFinder_T: 6
-    HTMLCrawler_N: 10
-    HTMLCrawler_T: 10
+    HTMLCrawler_N: 5
+    HTMLCrawler_T: 25
     ImageDownloader_N: 5
     ImageDownloader_T: 5

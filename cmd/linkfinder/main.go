@@ -75,6 +75,7 @@ func main() {
 			fmt.Printf("%d Pages found in %s\n\n", len(validPages), link)
 			sendBatchMessages(ctx, profileProducer, validPages)
 			sendBatchMessages(ctx, contentProducer, validPages)
+
 			consumer.Ack(msg)
 		} else {
 			consumer.Nack(msg)
@@ -214,14 +215,15 @@ func processTistoryBlog(cfg *config.Config, client *crawler.Client, blogName str
 			if htmlTitle != "TISTORY" {
 				emptyPageCnt = 0
 				validPages = append(validPages, fmt.Sprintf("T%s/%d", blogName, idx))
-				fmt.Printf("\rPages found: %d", len(validPages))
+				if len(validPages)%100 == 0 {
+					fmt.Printf("Pages found: %d\n", len(validPages))
+				}
 			} else {
 				emptyPageCnt++
 			}
 		}(currentIndex)
 	}
 
-	fmt.Printf("\n")
 	return validPages, true
 }
 
