@@ -20,14 +20,14 @@ import (
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("설정 파일 로드 실패: %v\n", err)
+		log.Fatalf("Failed to load config file: %v\n", err)
 	}
 
 	cClient := crawler.NewClient(cfg)
 
 	pClient, err := pulsar.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("Pulsar 클라이언트 생성 실패: %v\n", err)
+		log.Fatalf("Failed to create Pulsar client: %v\n", err)
 	}
 	defer pClient.Close()
 
@@ -39,11 +39,11 @@ func main() {
 
 	consumer, err := pClient.CreateConsumer("user", cfg.CrawlerName+"_LinkFinder")
 	if err != nil {
-		log.Fatalf("Consumer 구독 실패: %v\n", err)
+		log.Fatalf("Failed to subscribe Consumer: %v\n", err)
 	}
 	defer consumer.Close()
 
-	fmt.Println("🚀 LinkFinder 시작됨. 메시지 대기 중...")
+	fmt.Println("LinkFinder Started. Waiting for messages...")
 
 	ctx := context.Background()
 

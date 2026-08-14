@@ -18,30 +18,30 @@ import (
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("설정 파일 로드 실패: %v\n", err)
+		log.Fatalf("Failed to load config file: %v\n", err)
 	}
 
 	cClient := crawler.NewClient(cfg)
 
 	pClient, err := pulsar.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("Pulsar 클라이언트 생성 실패: %v\n", err)
+		log.Fatalf("Failed to create Pulsar client: %v\n", err)
 	}
 	defer pClient.Close()
 
 	userProducer, err := pClient.CreateProducer("user")
 	if err != nil {
-		log.Fatalf("User Producer 생성 실패: %v\n", err)
+		log.Fatalf("Failed to create User Producer: %v\n", err)
 	}
 	defer userProducer.Close()
 
 	consumer, err := pClient.CreateConsumer("profile", cfg.CrawlerName+"_ProfileFinder")
 	if err != nil {
-		log.Fatalf("Consumer 구독 실패: %v\n", err)
+		log.Fatalf("Failed to subscribe Consumer: %v\n", err)
 	}
 	defer consumer.Close()
 
-	fmt.Println("🚀 ProfileFinder 시작됨. 메시지 대기 중...")
+	fmt.Println("ProfileFinder Started. Waiting for messages...")
 
 	ctx := context.Background()
 
@@ -111,7 +111,7 @@ func handleNaverSympathy(cfg *config.Config, client *crawler.Client, profileName
 	headers := map[string]string{"Referer": referer}
 	body, statusCode, err := client.DoRequest("GET", targetURL, headers, nil)
 	if err != nil || statusCode >= 400 {
-		return nil, fmt.Errorf("요청 실패 (상태 코드: %d): %v", statusCode, err)
+		return nil, fmt.Errorf("Request Failed (Status Code: %d): %v", statusCode, err)
 	}
 
 	re := regexp.MustCompile(`"domainIdOrBlogId":"([^"]+)"`)
@@ -143,7 +143,7 @@ func handleTistoryComment(cfg *config.Config, client *crawler.Client, profileNam
 
 	body, statusCode, err := client.DoRequest("GET", targetURL, nil, nil)
 	if err != nil || statusCode >= 400 {
-		return nil, fmt.Errorf("요청 실패 (상태 코드: %d): %v", statusCode, err)
+		return nil, fmt.Errorf("Request Failed (Status Code: %d): %v", statusCode, err)
 	}
 
 	re := regexp.MustCompile(`"homepage"\s*:\s*"https://([^"/]+)`)

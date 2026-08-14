@@ -31,24 +31,24 @@ type job struct {
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("설정 파일 로드 실패: %v\n", err)
+		log.Fatalf("Failed to load config file: %v\n", err)
 	}
 
 	cClient := crawler.NewClient(cfg)
 
 	pClient, err := pulsar.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("Pulsar 클라이언트 생성 실패: %v\n", err)
+		log.Fatalf("Failed to create Pulsar client: %v\n", err)
 	}
 	defer pClient.Close()
 
 	consumer, err := pClient.CreateConsumer("content", cfg.CrawlerName+"_HTMLCrawler")
 	if err != nil {
-		log.Fatalf("Consumer 구독 실패: %v\n", err)
+		log.Fatalf("Failed to subscribe Consumer: %v\n", err)
 	}
 	defer consumer.Close()
 
-	fmt.Println("🚀 HTMLCrawler 시작됨. 메시지 대기 중...")
+	fmt.Println("HTMLCrawler Started. Waiting for messages...")
 
 	ctx := context.Background()
 
@@ -105,8 +105,6 @@ func main() {
 		}
 	}
 
-	// 타입별로 워커를 CRAWL_PER_SECOND개만큼 띄운다.
-	// 워커 하나 = "작업 하나 처리 -> 1초 대기" 를 반복 -> 워커 N개 합산 = 초당 N건
 	startWorkers := func(queue chan job, count int) {
 		for i := 0; i < count; i++ {
 			go func() {
@@ -120,7 +118,6 @@ func main() {
 	startWorkers(naverQueue, naverWorkers)
 	startWorkers(tistoryQueue, tistoryWorkers)
 
-	// 메시지 수신 -> 큐 분배만 담당 (딜레이 없음, 큐가 알아서 페이싱)
 	go func() {
 		for {
 			cm, err := consumer.Receive(ctx)
@@ -185,7 +182,7 @@ func main() {
 					consumer.Ack(msg)
 				}
 				if cfg.Verbose {
-					fmt.Printf("✅ %d 개 HTML 저장 완료\n", len(bodies))
+					fmt.Printf("%d HTML 저장 완료\n", len(bodies))
 				}
 			} else {
 				for _, msg := range processedMsgs {

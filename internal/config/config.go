@@ -57,7 +57,6 @@ type yamlRawConfig struct {
 	CrawlPerSecondMap          map[string]int `yaml:"crawl_per_second_map"`
 }
 
-// 상위 디렉토리로 이동하며 config.yaml 경로를 탐색하는 함수
 func findConfigFile(filename string) (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

@@ -60,7 +60,7 @@ func (c *Client) CreateConsumer(topic, subscriptionName string) (pulsar.Consumer
 		Topic:             fullTopic,
 		SubscriptionName:  subscriptionName,
 		Type:              pulsar.Shared,
-		ReceiverQueueSize: 1,
+		ReceiverQueueSize: 1000,
 	}
 
 	consumer, err := c.pulsarClient.Subscribe(consumerOptions)
