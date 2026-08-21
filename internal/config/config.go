@@ -14,7 +14,7 @@ type Config struct {
 	UserAgentSuffix            string         `yaml:"user_agent.suffix"`
 	UserAgent                  string         `yaml:"-"`
 	LinkKVEndpoint             string         `yaml:"link_kv_endpoint"`
-	HTMLStorageEndpoint        string         `yaml:"html_storage_endpoint"`
+	HTMLBundlerEndpoint        string         `yaml:"html_bundler_endpoint"`
 	PulsarServiceURL           string         `yaml:"pulsar_service_url"`
 	PulsarNamespace            string         `yaml:"pulsar_namespace"`
 	MaxConcurrentRequests      int            `yaml:"max_concurrent_requests"`
@@ -39,7 +39,7 @@ type yamlRawConfig struct {
 		Suffix string `yaml:"suffix"`
 	} `yaml:"user_agent"`
 	LinkKVEndpoint             string         `yaml:"link_kv_endpoint"`
-	HTMLStorageEndpoint        string         `yaml:"html_storage_endpoint"`
+	HTMLBundlerEndpoint        string         `yaml:"html_bundler_endpoint"`
 	PulsarServiceURL           string         `yaml:"pulsar_service_url"`
 	PulsarNamespace            string         `yaml:"pulsar_namespace"`
 	MaxConcurrentRequests      int            `yaml:"max_concurrent_requests"`
@@ -99,7 +99,7 @@ func LoadConfig() (*Config, error) {
 		CrawlerName:                raw.CrawlerName,
 		UserAgent:                  raw.UserAgent.Prefix + raw.CrawlerName + raw.UserAgent.Suffix,
 		LinkKVEndpoint:             raw.LinkKVEndpoint,
-		HTMLStorageEndpoint:        raw.HTMLStorageEndpoint,
+		HTMLBundlerEndpoint:        raw.HTMLBundlerEndpoint,
 		PulsarServiceURL:           raw.PulsarServiceURL,
 		PulsarNamespace:            raw.PulsarNamespace,
 		MaxConcurrentRequests:      raw.MaxConcurrentRequests,

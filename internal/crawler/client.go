@@ -250,26 +250,32 @@ func (c *Client) RegisterLink(link, linkType string) bool {
 	return statusCode == 201
 }
 
-func (c *Client) PostHTMLContent(bodies map[string]string) error {
-	if len(bodies) == 0 {
+func (c *Client) PostHTMLContent(id, blogType, htmlBody string, timestamp int64) error {
+	if htmlBody == "" {
 		return nil
 	}
 
-	payloadMap := make(map[string]json.RawMessage)
-	for k, v := range bodies {
-		payloadMap[k] = json.RawMessage(v)
+	payload := struct {
+		Body      string `json:"body"`
+		Blog      string `json:"blog"`
+		Timestamp int64  `json:"timestamp"`
+	}{
+		Body:      htmlBody,
+		Blog:      blogType,
+		Timestamp: timestamp,
 	}
 
-	payloadBytes, err := json.Marshal(payloadMap)
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
-	targetURL := fmt.Sprintf("%s/batch", c.cfg.HTMLStorageEndpoint)
+	targetURL := fmt.Sprintf("%s/%s", c.cfg.HTMLBundlerEndpoint, id)
 	headers := map[string]string{"Content-Type": "application/json"}
+
 	_, statusCode, err := c.DoRequest("POST", targetURL, headers, payloadBytes)
 	if err != nil || statusCode >= 400 {
-		return fmt.Errorf("HTML 저장 실패 (상태 코드: %d): %v", statusCode, err)
+		return fmt.Errorf("Failed to Post to HTML Bundler (Status Code: %d): %v", statusCode, err)
 	}
 
 	return nil

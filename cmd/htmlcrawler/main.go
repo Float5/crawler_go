@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"crawler/internal/config"
@@ -148,8 +148,7 @@ func main() {
 		}
 	}()
 
-	bodies := make(map[string]string)
-	var processedMsgs []pulsarClient.Message
+	var postWG sync.WaitGroup
 
 	for res := range resultsChan {
 		if !res.isSuccess {
@@ -158,39 +157,28 @@ func main() {
 		}
 
 		dbCheckLink := strings.Replace(res.link, "/", "%20", 1)
-		htmlStorageLink := strings.Replace(res.link, "/", " ", 1)
 
-		if cClient.CheckLinkNotVisited(dbCheckLink, "posts") {
-			fmt.Printf("%s Crawled\n", res.link)
-
-			bodyMap := map[string]interface{}{
-				"body":      res.htmlBody,
-				"blog":      res.blogType,
-				"timestamp": time.Now().Unix(),
-			}
-			bodyJSON, _ := json.Marshal(bodyMap)
-
-			bodies[htmlStorageLink[1:]] = string(bodyJSON)
-			processedMsgs = append(processedMsgs, res.msg)
-		} else {
+		if !cClient.CheckLinkNotVisited(dbCheckLink, "posts") {
 			consumer.Ack(res.msg)
+			continue
 		}
 
-		if len(bodies) >= cfg.BodiesThreshold {
-			if err := cClient.PostHTMLContent(bodies); err == nil {
-				for _, msg := range processedMsgs {
-					consumer.Ack(msg)
-				}
-				if cfg.Verbose {
-					fmt.Printf("%d HTML 저장 완료\n", len(bodies))
-				}
-			} else {
-				for _, msg := range processedMsgs {
-					consumer.Nack(msg)
-				}
+		bundlerID := dbCheckLink[1:]
+
+		postWG.Add(1)
+		go func(res ProcessResult, bundlerID string) {
+			defer postWG.Done()
+
+			if err := cClient.PostHTMLContent(bundlerID, res.blogType, res.htmlBody, time.Now().Unix()); err != nil {
+				fmt.Printf("error: %v, link: %s\n", err, res.link)
+				consumer.Nack(res.msg)
+				return
 			}
-			bodies = make(map[string]string)
-			processedMsgs = nil
-		}
+
+			fmt.Printf("%s Crawled\n", res.link)
+			consumer.Ack(res.msg)
+		}(res, bundlerID)
 	}
+
+	postWG.Wait()
 }

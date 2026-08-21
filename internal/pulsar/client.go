@@ -2,7 +2,6 @@ package pulsar
 
 import (
 	"fmt"
-	"time"
 
 	"crawler/internal/config"
 
@@ -39,11 +38,11 @@ func (c *Client) Close() {
 func (c *Client) CreateProducer(topic string) (pulsar.Producer, error) {
 	fullTopic := c.cfg.PulsarNamespace + topic
 	producerOptions := pulsar.ProducerOptions{
-		Topic:                   fullTopic,
-		MaxPendingMessages:      c.cfg.MaxMessageQueueSize,
-		BatchingMaxPublishDelay: time.Duration(c.cfg.MaxBatchingDelay) * time.Millisecond,
-		BatchingMaxMessages:     uint(c.cfg.MaxBatchingMessageCount),
-		DisableBatching:         true,
+		Topic:              fullTopic,
+		MaxPendingMessages: c.cfg.MaxMessageQueueSize,
+		//BatchingMaxPublishDelay: time.Duration(c.cfg.MaxBatchingDelay) * time.Millisecond,
+		//BatchingMaxMessages:     uint(c.cfg.MaxBatchingMessageCount),
+		DisableBatching: true,
 	}
 
 	producer, err := c.pulsarClient.CreateProducer(producerOptions)

@@ -73,8 +73,8 @@ func main() {
 
 		if ack {
 			fmt.Printf("%d Pages found in %s\n\n", len(validPages), link)
-			sendBatchMessages(ctx, profileProducer, validPages)
-			sendBatchMessages(ctx, contentProducer, validPages)
+			sendMessages(ctx, profileProducer, validPages)
+			sendMessages(ctx, contentProducer, validPages)
 
 			consumer.Ack(msg)
 		} else {
@@ -227,7 +227,7 @@ func processTistoryBlog(cfg *config.Config, client *crawler.Client, blogName str
 	return validPages, true
 }
 
-func sendBatchMessages(ctx context.Context, producer pulsarClient.Producer, messages []string) {
+func sendMessages(ctx context.Context, producer pulsarClient.Producer, messages []string) {
 	for _, msgStr := range messages {
 		producer.SendAsync(ctx, &pulsarClient.ProducerMessage{
 			Payload: []byte(msgStr),
