@@ -29,7 +29,7 @@ verbose: false
 log_level: "ERROR"                                                  # INFO, DEBUG, WARN, ERROR
 
 crawl_per_second_map:
-    LinkFinder_N: 3
+    LinkFinder_N: 10
     LinkFinder_T: 10
     ProfileFinder_N: 4
     ProfileFinder_T: 6

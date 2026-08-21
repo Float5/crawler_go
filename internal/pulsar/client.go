@@ -2,6 +2,7 @@ package pulsar
 
 import (
 	"fmt"
+	"time"
 
 	"crawler/internal/config"
 
@@ -56,10 +57,15 @@ func (c *Client) CreateProducer(topic string) (pulsar.Producer, error) {
 func (c *Client) CreateConsumer(topic, subscriptionName string) (pulsar.Consumer, error) {
 	fullTopic := c.cfg.PulsarNamespace + topic
 	consumerOptions := pulsar.ConsumerOptions{
-		Topic:             fullTopic,
-		SubscriptionName:  subscriptionName,
-		Type:              pulsar.Shared,
-		ReceiverQueueSize: 1000,
+		Topic:            fullTopic,
+		SubscriptionName: subscriptionName,
+		Type:             pulsar.Shared,
+		DLQ: &pulsar.DLQPolicy{
+			MaxDeliveries:   3,
+			DeadLetterTopic: fullTopic + "-DLQ",
+		},
+		NackRedeliveryDelay: 1 * time.Second,
+		ReceiverQueueSize:   1000,
 	}
 
 	consumer, err := c.pulsarClient.Subscribe(consumerOptions)

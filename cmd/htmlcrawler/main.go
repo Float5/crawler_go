@@ -99,6 +99,7 @@ func main() {
 		if err != nil || statusCode != 200 {
 			fmt.Printf("error: %v, code: %d, link: %s\n", err, statusCode, targetLink)
 			resultsChan <- ProcessResult{msg: msg, link: targetLink, isSuccess: false}
+			consumer.Nack(msg)
 			return
 		}
 
