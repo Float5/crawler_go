@@ -31,22 +31,47 @@ func main() {
 	}
 	defer pClient.Close()
 
-	profileProducer, _ := pClient.CreateProducer("profile")
-	defer profileProducer.Close()
+	profileProducerNaver, _ := pClient.CreateProducer("profile-naver")
+	profileProducerTistory, _ := pClient.CreateProducer("profile-tistory")
+	contentProducerNaver, _ := pClient.CreateProducer("content-naver")
+	contentProducerTistory, _ := pClient.CreateProducer("content-tistory")
 
-	contentProducer, _ := pClient.CreateProducer("content")
-	defer contentProducer.Close()
+	defer profileProducerNaver.Close()
+	defer profileProducerTistory.Close()
+	defer contentProducerNaver.Close()
+	defer contentProducerTistory.Close()
 
-	consumer, err := pClient.CreateConsumer("user", cfg.CrawlerName+"_LinkFinder")
+	consumerNaver, err := pClient.CreateConsumer("user-naver", cfg.CrawlerName+"_LinkFinder_N")
 	if err != nil {
-		log.Fatalf("Failed to subscribe Consumer: %v\n", err)
+		log.Fatalf("Failed to subscribe Naver Consumer: %v\n", err)
 	}
-	defer consumer.Close()
+	defer consumerNaver.Close()
+
+	consumerTistory, err := pClient.CreateConsumer("user-tistory", cfg.CrawlerName+"_LinkFinder_T")
+	if err != nil {
+		log.Fatalf("Failed to subscribe Tistory Consumer: %v\n", err)
+	}
+	defer consumerTistory.Close()
 
 	fmt.Println("LinkFinder Started. Waiting for messages...")
 
 	ctx := context.Background()
+	var wg sync.WaitGroup
 
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		runNaverLoop(ctx, cfg, cClient, consumerNaver, profileProducerNaver, contentProducerNaver)
+	}()
+	go func() {
+		defer wg.Done()
+		runTistoryLoop(ctx, cfg, cClient, consumerTistory, profileProducerTistory, contentProducerTistory)
+	}()
+
+	wg.Wait()
+}
+
+func runNaverLoop(ctx context.Context, cfg *config.Config, cClient *crawler.Client, consumer pulsarClient.Consumer, profileProducer, contentProducer pulsarClient.Producer) {
 	for {
 		msg, err := consumer.Receive(ctx)
 		if err != nil {
@@ -55,27 +80,44 @@ func main() {
 		}
 
 		link := string(msg.Payload())
-		if link == "" {
+		if link == "" || !strings.HasPrefix(link, "N") {
 			consumer.Ack(msg)
 			continue
 		}
 
-		var ack bool
-		var validPages []string
-
-		if strings.HasPrefix(link, "N") {
-			validPages, ack = processNaverBlog(cfg, cClient, link[1:])
-		} else if strings.HasPrefix(link, "T") {
-			validPages, ack = processTistoryBlog(cfg, cClient, link[1:])
-		} else {
-			ack = true
-		}
+		validPages, ack := processNaverBlog(cfg, cClient, link[1:])
 
 		if ack {
-			fmt.Printf("%d Pages found in %s\n\n", len(validPages), link)
+			fmt.Printf("[Naver] %d pages found in %s\n", len(validPages), link)
 			sendMessages(ctx, profileProducer, validPages)
 			sendMessages(ctx, contentProducer, validPages)
+			consumer.Ack(msg)
+		} else {
+			consumer.Nack(msg)
+		}
+	}
+}
 
+func runTistoryLoop(ctx context.Context, cfg *config.Config, cClient *crawler.Client, consumer pulsarClient.Consumer, profileProducer, contentProducer pulsarClient.Producer) {
+	for {
+		msg, err := consumer.Receive(ctx)
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		link := string(msg.Payload())
+		if link == "" || !strings.HasPrefix(link, "T") {
+			consumer.Ack(msg)
+			continue
+		}
+
+		validPages, ack := processTistoryBlog(cfg, cClient, link[1:])
+
+		if ack {
+			fmt.Printf("[Tistory] %d pages found in %s\n", len(validPages), link)
+			sendMessages(ctx, profileProducer, validPages)
+			sendMessages(ctx, contentProducer, validPages)
 			consumer.Ack(msg)
 		} else {
 			consumer.Nack(msg)
@@ -84,7 +126,7 @@ func main() {
 }
 
 func processNaverBlog(cfg *config.Config, client *crawler.Client, blogName string) ([]string, bool) {
-	fmt.Printf("Start to process \"N%s\"\n", blogName)
+	fmt.Printf("[Naver] Start to process \"N%s\"\n", blogName)
 
 	var validPages []string
 	foundPostIds := make(map[string]bool)
@@ -128,9 +170,11 @@ func processNaverBlog(cfg *config.Config, client *crawler.Client, blogName strin
 			foundPostIds[postID] = true
 			validPages = append(validPages, fmt.Sprintf("N%s/%s", blogName, postID))
 			pagesInCall++
-		}
 
-		fmt.Printf("\rPages found: %d", len(validPages))
+			if len(validPages)%300 == 0 {
+				fmt.Printf("[Naver] %s: %d pages found so far\n", blogName, len(validPages))
+			}
+		}
 
 		if duplicateFound || pagesInCall == 0 {
 			break
@@ -140,12 +184,11 @@ func processNaverBlog(cfg *config.Config, client *crawler.Client, blogName strin
 		time.Sleep(delay)
 	}
 
-	fmt.Printf("\n")
 	return validPages, true
 }
 
 func processTistoryBlog(cfg *config.Config, client *crawler.Client, blogName string) ([]string, bool) {
-	fmt.Printf("Start to process \"T%s\"\n", blogName)
+	fmt.Printf("[Tistory] Start to process \"T%s\"\n", blogName)
 
 	rssURL := fmt.Sprintf("https://%s.tistory.com/rss", blogName)
 	if !client.IsAllowedByRobots(rssURL) {
@@ -195,31 +238,19 @@ func processTistoryBlog(cfg *config.Config, client *crawler.Client, blogName str
 			}
 
 			headers := map[string]string{"Range": "bytes=0-256"}
-			respBytes, code, err := client.DoRequest("GET", postURL, headers, nil)
+			_, code, err := client.DoRequest("GET", postURL, headers, nil)
 			if err != nil || code >= 400 {
+				emptyPageCnt++
 				return
-			}
-
-			respStr := string(respBytes)
-			titleTagOpen := strings.Index(respStr, "<title>")
-			titleTagClose := strings.Index(respStr, "</title>")
-
-			var htmlTitle string
-			if titleTagOpen != -1 && titleTagClose != -1 && titleTagClose > titleTagOpen {
-				htmlTitle = respStr[titleTagOpen+7 : titleTagClose]
 			}
 
 			mu.Lock()
 			defer mu.Unlock()
 
-			if htmlTitle != "TISTORY" {
-				emptyPageCnt = 0
-				validPages = append(validPages, fmt.Sprintf("T%s/%d", blogName, idx))
-				if len(validPages)%100 == 0 {
-					fmt.Printf("Pages found: %d\n", len(validPages))
-				}
-			} else {
-				emptyPageCnt++
+			emptyPageCnt = 0
+			validPages = append(validPages, fmt.Sprintf("T%s/%d", blogName, idx))
+			if len(validPages)%100 == 0 {
+				fmt.Printf("[Tistory] %s: %d pages found so far\n", blogName, len(validPages))
 			}
 		}(currentIndex)
 	}

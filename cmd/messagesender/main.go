@@ -29,22 +29,29 @@ func main() {
 	}
 	defer pClient.Close()
 
-	userProd, _ := pClient.CreateProducer("user")
-	profileProd, _ := pClient.CreateProducer("profile")
-	contentProd, _ := pClient.CreateProducer("content")
-	imageProd, _ := pClient.CreateProducer("image")
+	userProdNaver, _ := pClient.CreateProducer("user-naver")
+	userProdTistory, _ := pClient.CreateProducer("user-tistory")
+	profileProdNaver, _ := pClient.CreateProducer("profile-naver")
+	profileProdTistory, _ := pClient.CreateProducer("profile-tistory")
+	contentProdNaver, _ := pClient.CreateProducer("content-naver")
+	contentProdTistory, _ := pClient.CreateProducer("content-tistory")
+	imageProdNaver, _ := pClient.CreateProducer("image-naver")
+	imageProdTistory, _ := pClient.CreateProducer("image-tistory")
 
-	defer userProd.Close()
-	defer profileProd.Close()
+	defer userProdNaver.Close()
+	defer userProdTistory.Close()
+	defer profileProdNaver.Close()
+	defer profileProdTistory.Close()
+	defer contentProdNaver.Close()
+	defer contentProdTistory.Close()
+	defer imageProdNaver.Close()
+	defer imageProdTistory.Close()
 
-	defer contentProd.Close()
-	defer imageProd.Close()
-
-	producers := map[string]pulsarClient.Producer{
-		"user":    userProd,
-		"profile": profileProd,
-		"content": contentProd,
-		"image":   imageProd,
+	producers := map[string]map[string]pulsarClient.Producer{
+		"user":    {"naver": userProdNaver, "tistory": userProdTistory},
+		"profile": {"naver": profileProdNaver, "tistory": profileProdTistory},
+		"content": {"naver": contentProdNaver, "tistory": contentProdTistory},
+		"image":   {"naver": imageProdNaver, "tistory": imageProdTistory},
 	}
 
 	fmt.Println("Input Topic and Messages to Publish (-1 to exit)")
@@ -73,7 +80,7 @@ func main() {
 		}
 
 		topic := parts[0]
-		prod, ok := producers[topic]
+		topicProducers, ok := producers[topic]
 		if !ok {
 			fmt.Println("Topic must be one of user, profile, content, image.")
 			continue
@@ -85,9 +92,26 @@ func main() {
 			continue
 		}
 
+		blogTypeOf := func(m string) (string, bool) {
+			switch {
+			case strings.HasPrefix(m, "N"):
+				return "naver", true
+			case strings.HasPrefix(m, "T"):
+				return "tistory", true
+			default:
+				return "", false
+			}
+		}
+
 		if topic == "image" {
 			for _, m := range messages {
-				prod.SendAsync(ctx, &pulsarClient.ProducerMessage{Payload: []byte(m)}, func(id pulsarClient.MessageID, msg *pulsarClient.ProducerMessage, err error) {})
+				blogType, ok := blogTypeOf(m)
+				if !ok {
+					fmt.Printf("%s: First Character must be N or T\n", m)
+					continue
+				}
+
+				topicProducers[blogType].SendAsync(ctx, &pulsarClient.ProducerMessage{Payload: []byte(m)}, func(id pulsarClient.MessageID, msg *pulsarClient.ProducerMessage, err error) {})
 			}
 			fmt.Println("Sent image messages.")
 		} else {
@@ -97,7 +121,8 @@ func main() {
 			}
 
 			for _, m := range messages {
-				if !strings.HasPrefix(m, "N") && !strings.HasPrefix(m, "T") {
+				blogType, ok := blogTypeOf(m)
+				if !ok {
 					fmt.Printf("%s: First Character must be N or T\n", m)
 					continue
 				}
@@ -106,7 +131,7 @@ func main() {
 					if topic == "user" {
 						cClient.RegisterLink(m, "users")
 					}
-					prod.SendAsync(ctx, &pulsarClient.ProducerMessage{Payload: []byte(m)}, func(id pulsarClient.MessageID, msg *pulsarClient.ProducerMessage, err error) {})
+					topicProducers[blogType].SendAsync(ctx, &pulsarClient.ProducerMessage{Payload: []byte(m)}, func(id pulsarClient.MessageID, msg *pulsarClient.ProducerMessage, err error) {})
 					fmt.Printf("Sent: %s\n", m)
 				} else {
 					fmt.Printf("%s: Already visited or Connect Failed\n", m)

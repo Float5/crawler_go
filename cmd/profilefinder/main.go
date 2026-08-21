@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"crawler/internal/config"
@@ -29,32 +30,59 @@ func main() {
 	}
 	defer pClient.Close()
 
-	userProducer, err := pClient.CreateProducer("user")
+	userProducerNaver, err := pClient.CreateProducer("user-naver")
 	if err != nil {
-		log.Fatalf("Failed to create User Producer: %v\n", err)
+		log.Fatalf("Failed to create Naver User Producer: %v\n", err)
 	}
-	defer userProducer.Close()
+	defer userProducerNaver.Close()
 
-	consumer, err := pClient.CreateConsumer("profile", cfg.CrawlerName+"_ProfileFinder")
+	userProducerTistory, err := pClient.CreateProducer("user-tistory")
 	if err != nil {
-		log.Fatalf("Failed to subscribe Consumer: %v\n", err)
+		log.Fatalf("Failed to create Tistory User Producer: %v\n", err)
 	}
-	defer consumer.Close()
+	defer userProducerTistory.Close()
+
+	consumerNaver, err := pClient.CreateConsumer("profile-naver", cfg.CrawlerName+"_ProfileFinder_N")
+	if err != nil {
+		log.Fatalf("Failed to subscribe Naver Consumer: %v\n", err)
+	}
+	defer consumerNaver.Close()
+
+	consumerTistory, err := pClient.CreateConsumer("profile-tistory", cfg.CrawlerName+"_ProfileFinder_T")
+	if err != nil {
+		log.Fatalf("Failed to subscribe Tistory Consumer: %v\n", err)
+	}
+	defer consumerTistory.Close()
 
 	fmt.Println("ProfileFinder Started. Waiting for messages...")
 
 	ctx := context.Background()
+	var wg sync.WaitGroup
 
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		runNaverLoop(ctx, cfg, cClient, consumerNaver, userProducerNaver)
+	}()
+	go func() {
+		defer wg.Done()
+		runTistoryLoop(ctx, cfg, cClient, consumerTistory, userProducerTistory)
+	}()
+
+	wg.Wait()
+}
+
+func runNaverLoop(ctx context.Context, cfg *config.Config, cClient *crawler.Client, consumer pulsarClient.Consumer, userProducer pulsarClient.Producer) {
 	for {
 		msg, err := consumer.Receive(ctx)
 		if err != nil {
-			fmt.Printf("%s\n", err.Error())
+			fmt.Printf("[Naver] %s\n", err.Error())
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
 		payload := string(msg.Payload())
-		if len(payload) < 2 {
+		if len(payload) < 2 || !strings.HasPrefix(payload, "N") {
 			consumer.Ack(msg)
 			continue
 		}
@@ -68,36 +96,66 @@ func main() {
 		profileName := payload[1:slashIdx]
 		writingNumber := payload[slashIdx+1:]
 
-		var userIDs []string
-		var processErr error
-
-		if strings.HasPrefix(payload, "N") {
-			userIDs, processErr = handleNaverSympathy(cfg, cClient, profileName, writingNumber)
-		} else if strings.HasPrefix(payload, "T") {
-			userIDs, processErr = handleTistoryComment(cfg, cClient, profileName, writingNumber)
-		} else {
-			consumer.Ack(msg)
-			continue
-		}
-
+		userIDs, processErr := handleNaverSympathy(cfg, cClient, profileName, writingNumber)
 		if processErr != nil {
 			consumer.Nack(msg)
 			continue
 		}
 
-		fmt.Printf("%d Profiles found in %s\n\n", len(userIDs), payload)
-		for _, userID := range userIDs {
-			userProducer.SendAsync(ctx, &pulsarClient.ProducerMessage{
-				Payload: []byte(userID),
-			}, func(id pulsarClient.MessageID, msg *pulsarClient.ProducerMessage, err error) {})
-		}
+		fmt.Printf("[Naver] %d Profiles found in %s\n", len(userIDs), payload)
+		sendMessages(ctx, userProducer, userIDs)
 
 		consumer.Ack(msg)
 	}
 }
 
+func runTistoryLoop(ctx context.Context, cfg *config.Config, cClient *crawler.Client, consumer pulsarClient.Consumer, userProducer pulsarClient.Producer) {
+	for {
+		msg, err := consumer.Receive(ctx)
+		if err != nil {
+			fmt.Printf("[Tistory] %s\n", err.Error())
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		payload := string(msg.Payload())
+		if len(payload) < 2 || !strings.HasPrefix(payload, "T") {
+			consumer.Ack(msg)
+			continue
+		}
+
+		slashIdx := strings.Index(payload, "/")
+		if slashIdx == -1 {
+			consumer.Ack(msg)
+			continue
+		}
+
+		profileName := payload[1:slashIdx]
+		writingNumber := payload[slashIdx+1:]
+
+		userIDs, processErr := handleTistoryComment(cfg, cClient, profileName, writingNumber)
+		if processErr != nil {
+			consumer.Nack(msg)
+			continue
+		}
+
+		fmt.Printf("[Tistory] %d Profiles found in %s\n", len(userIDs), payload)
+		sendMessages(ctx, userProducer, userIDs)
+
+		consumer.Ack(msg)
+	}
+}
+
+func sendMessages(ctx context.Context, producer pulsarClient.Producer, messages []string) {
+	for _, userID := range messages {
+		producer.SendAsync(ctx, &pulsarClient.ProducerMessage{
+			Payload: []byte(userID),
+		}, func(id pulsarClient.MessageID, msg *pulsarClient.ProducerMessage, err error) {})
+	}
+}
+
 func handleNaverSympathy(cfg *config.Config, client *crawler.Client, profileName, writingNumber string) ([]string, error) {
-	fmt.Printf("Start to process \"N%s/%s\"\n", profileName, writingNumber)
+	fmt.Printf("[Naver] Start to process \"N%s/%s\"\n", profileName, writingNumber)
 
 	targetURL := fmt.Sprintf("https://blog.naver.com/api/blogs/%s/posts/%s/sympathy-users?itemCount=100&timeStamp=9999999999999", profileName, writingNumber)
 	referer := fmt.Sprintf("https://blog.naver.com/SympathyHistoryList.naver?blogId=%s&logNo=%s", profileName, writingNumber)
@@ -131,7 +189,7 @@ func handleNaverSympathy(cfg *config.Config, client *crawler.Client, profileName
 }
 
 func handleTistoryComment(cfg *config.Config, client *crawler.Client, profileName, writingNumber string) ([]string, error) {
-	fmt.Printf("Start to process \"T%s/%s\"\n", profileName, writingNumber)
+	fmt.Printf("[Tistory] Start to process \"T%s/%s\"\n", profileName, writingNumber)
 
 	targetURL := fmt.Sprintf("https://%s.tistory.com/m/api/%s/comment", profileName, writingNumber)
 

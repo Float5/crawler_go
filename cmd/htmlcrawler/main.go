@@ -42,11 +42,17 @@ func main() {
 	}
 	defer pClient.Close()
 
-	consumer, err := pClient.CreateConsumer("content", cfg.CrawlerName+"_HTMLCrawler")
+	consumerNaver, err := pClient.CreateConsumer("content-naver", cfg.CrawlerName+"_HTMLCrawler_N")
 	if err != nil {
-		log.Fatalf("Failed to subscribe Consumer: %v\n", err)
+		log.Fatalf("Failed to subscribe Naver Consumer: %v\n", err)
 	}
-	defer consumer.Close()
+	defer consumerNaver.Close()
+
+	consumerTistory, err := pClient.CreateConsumer("content-tistory", cfg.CrawlerName+"_HTMLCrawler_T")
+	if err != nil {
+		log.Fatalf("Failed to subscribe Tistory Consumer: %v\n", err)
+	}
+	defer consumerTistory.Close()
 
 	fmt.Println("HTMLCrawler Started. Waiting for messages...")
 
@@ -60,7 +66,7 @@ func main() {
 
 	resultsChan := make(chan ProcessResult, (naverWorkers+tistoryWorkers)*2)
 
-	processLink := func(msg pulsarClient.Message, targetLink string) {
+	processLink := func(consumer pulsarClient.Consumer, msg pulsarClient.Message, targetLink string) {
 		slashIdx := strings.Index(targetLink, "/")
 		if slashIdx == -1 {
 			consumer.Ack(msg)
@@ -105,20 +111,20 @@ func main() {
 		}
 	}
 
-	startWorkers := func(queue chan job, count int) {
+	startWorkers := func(consumer pulsarClient.Consumer, queue chan job, count int) {
 		for i := 0; i < count; i++ {
 			go func() {
 				for j := range queue {
-					processLink(j.msg, j.link)
+					processLink(consumer, j.msg, j.link)
 					time.Sleep(1 * time.Second)
 				}
 			}()
 		}
 	}
-	startWorkers(naverQueue, naverWorkers)
-	startWorkers(tistoryQueue, tistoryWorkers)
+	startWorkers(consumerNaver, naverQueue, naverWorkers)
+	startWorkers(consumerTistory, tistoryQueue, tistoryWorkers)
 
-	go func() {
+	receiveLoop := func(consumer pulsarClient.Consumer, queue chan job, logPrefix string) {
 		for {
 			cm, err := consumer.Receive(ctx)
 			if err != nil {
@@ -138,19 +144,21 @@ func main() {
 				continue
 			}
 
-			if strings.HasPrefix(link, "N") {
-				naverQueue <- job{msg: cm, link: link}
-			} else if strings.HasPrefix(link, "T") {
-				tistoryQueue <- job{msg: cm, link: link}
-			} else {
-				consumer.Ack(cm)
-			}
+			queue <- job{msg: cm, link: link}
+			_ = logPrefix
 		}
-	}()
+	}
+	go receiveLoop(consumerNaver, naverQueue, "[Naver]")
+	go receiveLoop(consumerTistory, tistoryQueue, "[Tistory]")
 
 	var postWG sync.WaitGroup
 
 	for res := range resultsChan {
+		consumer := consumerNaver
+		if res.blogType == "tistory" {
+			consumer = consumerTistory
+		}
+
 		if !res.isSuccess {
 			consumer.Nack(res.msg)
 			continue
@@ -164,20 +172,24 @@ func main() {
 		}
 
 		bundlerID := dbCheckLink[1:]
+		logPrefix := "[Naver]"
+		if res.blogType == "tistory" {
+			logPrefix = "[Tistory]"
+		}
 
 		postWG.Add(1)
-		go func(res ProcessResult, bundlerID string) {
+		go func(res ProcessResult, bundlerID, logPrefix string, consumer pulsarClient.Consumer) {
 			defer postWG.Done()
 
 			if err := cClient.PostHTMLContent(bundlerID, res.blogType, res.htmlBody, time.Now().Unix()); err != nil {
-				fmt.Printf("error: %v, link: %s\n", err, res.link)
+				fmt.Printf("%s error: %v, link: %s\n", logPrefix, err, res.link)
 				consumer.Nack(res.msg)
 				return
 			}
 
-			fmt.Printf("%s Crawled\n", res.link)
+			fmt.Printf("%s %s Crawled\n", logPrefix, res.link)
 			consumer.Ack(res.msg)
-		}(res, bundlerID)
+		}(res, bundlerID, logPrefix, consumer)
 	}
 
 	postWG.Wait()

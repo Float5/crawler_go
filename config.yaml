@@ -6,7 +6,7 @@ user_agent:
 link_kv_endpoint: "http://localhost:8082"                                    # link-kv.default.svc.cluster.local
 html_bundler_endpoint: "http://localhost:8081"                               # html-precompressor.default.svc.cluster.local
 pulsar_service_url: "pulsar://localhost:6650"      # pulsar+ssl://pulsar.tail372bfc.ts.net:6651, pulsar://localhost:6650
-pulsar_namespace: "persistent://public/default/"
+pulsar_namespace: "persistent://public/split/"
 
 max_concurrent_requests: 10
 bodies_threshold: 100
@@ -30,10 +30,10 @@ log_level: "ERROR"                                                  # INFO, DEBU
 
 crawl_per_second_map:
     LinkFinder_N: 3
-    LinkFinder_T: 25
+    LinkFinder_T: 10
     ProfileFinder_N: 4
     ProfileFinder_T: 6
     HTMLCrawler_N: 5
-    HTMLCrawler_T: 25
+    HTMLCrawler_T: 10
     ImageDownloader_N: 5
     ImageDownloader_T: 5
